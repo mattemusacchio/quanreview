@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sys
 import tempfile
@@ -38,6 +39,10 @@ class TmpProject:
 
     def add_output(self, annotator, mapping):
         self._write(os.path.join(self.ann, f"{annotator}_out.json"), mapping)
+
+    def add_flag_log(self, annotator, text):
+        with open(os.path.join(self.ann, f"{annotator}_flag.log"), "w", encoding="utf-8") as handle:
+            handle.write(text)
 
     @staticmethod
     def _write(path, payload):
@@ -196,6 +201,113 @@ class BanAndExcludeTests(unittest.TestCase):
         self.assertNotIn("b", result["per_annotator"])
 
 
+class FleissKappaTests(unittest.TestCase):
+    def test_full_agreement_split_items_is_one(self):
+        # Two items, three raters, everyone agrees within each item, items differ.
+        self.assertAlmostEqual(am.fleiss_kappa([[3, 0], [0, 3]]), 1.0)
+
+    def test_partial_disagreement_is_below_one(self):
+        self.assertAlmostEqual(am.fleiss_kappa([[2, 1], [1, 2]]), -1 / 3, places=6)
+
+    def test_ragged_rows_are_undefined(self):
+        self.assertTrue(math.isnan(am.fleiss_kappa([[3, 0], [2, 0]])))
+
+    def test_single_rater_is_undefined(self):
+        self.assertTrue(math.isnan(am.fleiss_kappa([[1, 0], [1, 0]])))
+
+    def test_empty_is_undefined(self):
+        self.assertTrue(math.isnan(am.fleiss_kappa([])))
+
+
+class FlagLogTests(unittest.TestCase):
+    def test_parses_legacy_lines_and_ignores_comments(self):
+        project = TmpProject()
+        project.add_flag_log(
+            "a",
+            "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n"
+            "# unit should be missing\n"
+            "File: d.json | Pair: 2 | Reason: Flagged fields [eventType, unit]\n",
+        )
+        flags = am.load_flag_log(os.path.join(project.ann, "a_flag.log"))
+        self.assertEqual(flags[("d.json", 0)], [["unit"]])
+        self.assertEqual(flags[("d.json", 2)], [["eventType", "unit"]])
+
+    def test_skip_lines_are_not_flags(self):
+        project = TmpProject()
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Skipped (no side selected, no flag)\n")
+        self.assertEqual(len(am.load_flag_log(os.path.join(project.ann, "a_flag.log"))), 0)
+
+
+class OverviewTests(unittest.TestCase):
+    def test_flags_and_vs_gt_counts(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        # Annotator kept the Model unit (so the pair is modified vs GT) and flagged it.
+        project.add_output("a", {"d.json": [dict(model)]})
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n")
+        stats = project.metrics()["per_annotator"]["a"]
+        self.assertEqual(stats["flags"], 1)
+        self.assertEqual(stats["flagged_docs"], 1)
+        self.assertEqual(stats["modified_vs_gt"], 1)
+        self.assertEqual(stats["pairs"], 1)
+
+    def test_dropped_gt_when_pair_left_undecided(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        # The reviewer saved nothing for the pair -> the GT event was dropped.
+        project.add_output("a", {"d.json": []})
+        stats = project.metrics()["per_annotator"]["a"]
+        self.assertEqual(stats["dropped_gt"], 1)
+
+
+class AgreementTests(unittest.TestCase):
+    def _shared_doc_project(self, a_unit, b_unit):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventO"}
+        gt2 = {"quantity": span("9", 20, 21), "unit": span("cases", 22, 27), "eventType": "EventO"}
+        model2 = {"quantity": span("9", 20, 21), "unit": span("incidents", 22, 31), "eventType": "EventP"}
+        project.add_doc("d.json", [gt, gt2], [model, model2])
+
+        def saved(unit_choice):
+            first = dict(gt) if unit_choice == "gt" else dict(model)
+            return [first, dict(gt2)]
+
+        project.add_output("a", {"d.json": saved(a_unit)})
+        project.add_output("b", {"d.json": saved(b_unit)})
+        return project
+
+    def test_agreement_present_for_shared_docs(self):
+        result = self._shared_doc_project("gt", "gt").metrics()
+        agreement = result["agreement"]
+        self.assertIsNotNone(agreement)
+        self.assertEqual(sorted(agreement["group"]), ["a", "b"])
+        self.assertEqual(agreement["shared_docs"], 1)
+        self.assertIn("eventType", agreement["per_field"])
+
+    def test_uneven_category_spread_does_not_crash(self):
+        # Reviewers disagree on one pair and agree on another, so the two items
+        # span different numbers of categories; Fleiss must align them, not throw.
+        result = self._shared_doc_project("gt", "model").metrics()
+        agreement = result["agreement"]
+        self.assertIsNotNone(agreement)
+        for value in agreement["per_field"].values():
+            self.assertTrue(isinstance(value, float))
+        self.assertTrue(isinstance(agreement["overall"], float))
+
+    def test_no_agreement_with_single_annotator(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        project.add_output("solo", {"d.json": [dict(gt)]})
+        self.assertIsNone(project.metrics()["agreement"])
+
+
 class RenderTests(unittest.TestCase):
     def test_markdown_renders_all_categories(self):
         project = TmpProject()
@@ -205,6 +317,9 @@ class RenderTests(unittest.TestCase):
         project.add_output("a", {"d.json": [dict(gt)]})
         text = am.render_markdown(project.metrics(), title="T")
         self.assertIn("# T", text)
+        for heading in ("### Per annotator", "### Annotations vs GT",
+                        "## 2. Who won", "Fleiss"):
+            self.assertIn(heading, text)
         for category in am.ANN_CATEGORIES:
             self.assertIn(category, text)
 
