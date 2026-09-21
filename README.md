@@ -53,6 +53,23 @@ reviewer agreed and raises the rest as conflicts, which
 `scripts/resolve_conflicts.py` adjudicates.
 `scripts/compute_annotation_stats.py` produces an inter-reviewer agreement
 report with pairwise Cohen's kappa and Fleiss' kappa.
+`web/backend/annotation_metrics.py` reports where each accepted field came
+from — ground truth, model, a field-by-field hybrid, a dropped field, or a
+free-text correction — by replaying the reviewer's exact pairing so every saved
+value is traced back to the pair it was decided on. Because the app only ever
+clones a side, the correction bucket stays at zero on a clean run; anything
+above zero is a real free-text edit or a pair the tracer could not resolve.
+Fields come from the schema and any of them can be excluded from the report:
+
+```bash
+cd web/backend
+python annotation_metrics.py \
+  --annotations-dir ../../data/annotation_project/results \
+  --gt-dir ../../data/sample/ground_truth \
+  --model-dir ../../data/sample/model_tags \
+  --schema ../../comparison_schema.yaml \
+  --ban-field eventType
+```
 
 Edit `annotation_config.yaml` to set the roster and the redundancy. It ships
 pointed at the sample corpus with a neutral four-person roster, so the whole
