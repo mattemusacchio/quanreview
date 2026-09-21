@@ -326,6 +326,23 @@ class AgreementTests(unittest.TestCase):
         self.assertIsNone(agreement["unflagged"])
         self.assertIsNotNone(agreement["all"])
 
+    def test_flag_kappa_high_when_reviewers_flag_the_same_pair(self):
+        # Both reviewers flag pair 0 and leave pair 1 alone -> perfect agreement
+        # on the act of flagging.
+        project = self._shared_doc_project("gt", "gt")
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n")
+        project.add_flag_log("b", "File: d.json | Pair: 0 | Reason: Flagged fields [eventType]\n")
+        agreement = project.metrics()["agreement"]
+        self.assertIn("flag_kappa", agreement)
+        self.assertAlmostEqual(agreement["flag_kappa"], 1.0)
+
+    def test_flag_kappa_present_without_flags(self):
+        # No flags anywhere: every reviewer agrees on "unflagged" for all pairs,
+        # so the act-of-flagging kappa is undefined (nan), not a crash.
+        agreement = self._shared_doc_project("gt", "gt").metrics()["agreement"]
+        self.assertIn("flag_kappa", agreement)
+        self.assertNotEqual(agreement["flag_kappa"], agreement["flag_kappa"])  # nan
+
     def test_no_agreement_with_single_annotator(self):
         project = TmpProject()
         gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
