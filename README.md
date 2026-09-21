@@ -1,5 +1,7 @@
 # QuanReview
 
+![Two candidate annotations shown side by side with neutral labels and per-field controls to accept either side, build a hybrid, or flag fields.](paper/figures/nertag.png)
+
 A human-in-the-loop tool for correcting model-extracted event annotations.
 
 QuanReview compares a model's extractions against ground-truth annotations,
@@ -46,20 +48,26 @@ output, and separate logs for flags, comments and skips.
 
 ## Multiple reviewers
 
+`./run_annotator.sh <id>` (`.\run_annotator.cmd <id>` on Windows) opens one
+reviewer's session over the documents assigned to them. `./run_comparison.sh`
+runs a one-off review straight over a ground-truth/model pair of directories,
+without an assignment roster.
+
 `scripts/orchestrate.py` assigns the discrepant documents across a roster with a
 configurable redundancy factor, seeded so the assignment is reproducible.
 `scripts/integrate_annotations.py` merges documents where every assigned
 reviewer agreed and raises the rest as conflicts, which
 `scripts/resolve_conflicts.py` adjudicates.
-`scripts/compute_annotation_stats.py` produces an inter-reviewer agreement
-report with pairwise Cohen's kappa and Fleiss' kappa.
-`web/backend/annotation_metrics.py` reports where each accepted field came
-from — ground truth, model, a field-by-field hybrid, a dropped field, or a
-free-text correction — by replaying the reviewer's exact pairing so every saved
-value is traced back to the pair it was decided on. Because the app only ever
-clones a side, the correction bucket stays at zero on a clean run; anything
-above zero is a real free-text edit or a pair the tracer could not resolve.
-Fields come from the schema and any of them can be excluded from the report:
+
+`web/backend/annotation_metrics.py` reports on the collected outputs: per-reviewer
+counts, how far each moved from ground truth, where every accepted field ended up
+— ground truth, model, a field-by-field hybrid, a dropped field, or a free-text
+correction — and inter-reviewer agreement as Fleiss' kappa per field. Each saved
+value is traced back to the pair it was decided on by replaying the reviewer's
+exact pairing; because the app only ever clones a side, the correction bucket
+stays at zero on a clean run, so anything above zero is a real free-text edit or
+a pair the tracer could not resolve. Fields come from the schema and any of them
+can be excluded from the report:
 
 ```bash
 cd web/backend

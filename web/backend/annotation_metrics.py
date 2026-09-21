@@ -1,32 +1,28 @@
-"""Who-won metrics over annotator outputs (GT vs Model vs correction).
+"""Metrics over annotator outputs: where each field landed and how reviewers agree.
 
 Each saved annotation is traced back to the discrepant pair it came from by
 reproducing the reviewer app's exact pairing (:class:`NERValidatorCore`):
-perfect ground-truth/model matches and real-only events are auto-kept and
-never shown to the annotator, model-only events are dropped, and only
-overlapping discrepant pairs are presented. Reversing that with a naive
-quantity heuristic mis-assigns events whenever a value repeats in a document,
-so this module goes through the same core the reviewer uses.
+perfect ground-truth/model matches and real-only events are auto-kept and never
+shown to the annotator, model-only events are dropped, and only overlapping
+discrepant pairs are presented. Reversing that with a naive quantity heuristic
+mis-assigns events whenever a value repeats in a document, so this module goes
+through the same core the reviewer uses.
 
 Every field is read from the comparison schema, so nothing about the label set
 is hard-coded. Fields can be excluded from the metrics ("banned") without
 altering the pairing, and annotators are discovered from the ``<name>_out.json``
 files in the annotations directory.
 
-Per matched pair, each field falls into one bucket:
+The report has four sections:
 
-``both_agree``
-    GT and Model already agreed and the annotator kept that value.
-``GT`` / ``Model``
-    The annotator kept the ground-truth / model side of a disagreement.
-``hybrid``
-    Annotation-level only: fields drawn from more than one bucket.
-``dropped``
-    The annotator emptied a field that one side had populated.
-``corrected``
-    The saved value matches neither side. The app only ever clones a side, so
-    a clean run leaves this at zero; a non-zero count flags either a genuine
-    free-text correction or a pairing the tracer could not resolve.
+* **Per annotator** — documents, pairs, saved annotations and flags per reviewer.
+* **Annotations vs GT** — how far each reviewer moved from ground truth.
+* **Who won** — per matched pair, each field is bucketed as ``both_agree``,
+  ``GT``, ``Model``, ``hybrid`` (annotation-level), ``dropped`` (a field the
+  annotator emptied) or ``corrected`` (a value matching neither side; zero on a
+  clean run because the app only clones a side).
+* **Inter-annotator agreement** — Fleiss' kappa per field over the largest set
+  of reviewers that share documents.
 """
 
 from __future__ import annotations
@@ -34,8 +30,11 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
+import re
 from collections import Counter, defaultdict
+from itertools import combinations
 from typing import Any, Iterable
 
 from ner_validator_core import NERValidatorCore
@@ -68,6 +67,52 @@ def discover_annotators(annotations_dir: str, exclude: Iterable[str] | None = No
         if name not in excluded:
             names.append(name)
     return names
+
+
+def load_flag_log(path: str) -> dict[tuple[str, int | None], list[list[str]]]:
+    """Parse a reviewer flag log into ``{(doc_id, pair_index): [[field, ...], ...]}``.
+
+    Handles the ``File: X | Pair: N | Reason: Flagged fields [a, b]`` lines the
+    app writes and, defensively, a JSON-per-line variant.
+    """
+    entries: dict[tuple[str, int | None], list[list[str]]] = defaultdict(list)
+    if not os.path.exists(path):
+        return entries
+    legacy = re.compile(r"File:\s*(\S+)\s*\|\s*Pair:\s*(\S+)\s*\|\s*Reason:\s*(.*)")
+    bracket = re.compile(r"\[([^\]]+)\]")
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("{"):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                doc_id = payload.get("doc_id")
+                if doc_id:
+                    entries[(doc_id, payload.get("pair_index"))].append(list(payload.get("fields", [])))
+                continue
+            match = legacy.match(line)
+            if not match:
+                continue
+            doc_id, pair, reason = match.groups()
+            if "Flagged fields" not in reason:
+                continue
+            pair_index = int(pair) if pair.lstrip("-").isdigit() else None
+            found = bracket.search(reason)
+            fields = [item.strip() for item in found.group(1).split(",")] if found else []
+            entries[(doc_id, pair_index)].append(fields)
+    return entries
+
+
+def _flag_log_path(annotations_dir: str, annotator: str) -> str | None:
+    for suffix in ("_flag.log", "_flagged.log"):
+        candidate = os.path.join(annotations_dir, f"{annotator}{suffix}")
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 
 def _get_nested(obj: Any, path: str) -> Any:
@@ -204,6 +249,46 @@ def assign_events_to_pairs(
     return assigned
 
 
+def fleiss_kappa(matrix: list[list[int]]) -> float:
+    """Fleiss' kappa for a category-count matrix (one row per item).
+
+    Each row holds the number of raters that chose each category and must sum to
+    the same rater count ``n``. Returns ``nan`` when it is undefined (no items,
+    fewer than two raters, ragged rows, or no expected disagreement).
+    """
+    if not matrix or not matrix[0]:
+        return float("nan")
+    width = len(matrix[0])
+    n = sum(matrix[0])
+    if n < 2 or any(len(row) != width or sum(row) != n for row in matrix):
+        return float("nan")
+    items = len(matrix)
+    total = items * n
+    p_cat = [sum(row[j] for row in matrix) / total for j in range(len(matrix[0]))]
+    agreement = [(sum(c * c for c in row) - n) / (n * (n - 1)) for row in matrix]
+    p_bar = sum(agreement) / items
+    p_expected = sum(p * p for p in p_cat)
+    if p_expected >= 1.0:
+        return float("nan")
+    return (p_bar - p_expected) / (1 - p_expected)
+
+
+def _largest_shared_group(doc_sets: dict[str, set[str]]) -> tuple[list[str], list[str]]:
+    """Largest reviewer subset (>=2) that shares at least one document."""
+    annotators = list(doc_sets)
+    best_group: list[str] = []
+    best_docs: set[str] = set()
+    for size in range(len(annotators), 1, -1):
+        for combo in combinations(annotators, size):
+            shared = set.intersection(*(doc_sets[a] for a in combo))
+            if shared and (len(combo), len(shared)) > (len(best_group), len(best_docs)):
+                best_group = list(combo)
+                best_docs = shared
+        if best_group:
+            break
+    return best_group, sorted(best_docs)
+
+
 def _load_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -217,10 +302,11 @@ def compute_metrics(
     exclude_annotators: Iterable[str] | None = None,
     banned_fields: Iterable[str] | None = None,
 ) -> dict:
-    """Bucket every annotation across annotators. Returns a plain-dict report."""
+    """Bucket every annotation and measure reviewer agreement. Returns a dict."""
     fields = schema_field_paths(schema, banned_fields)
     annotators = discover_annotators(annotations_dir, exclude_annotators)
     outputs = {a: _load_json(os.path.join(annotations_dir, f"{a}_out.json")) for a in annotators}
+    flags = {a: load_flag_log(_flag_log_path(annotations_dir, a) or "") for a in annotators}
 
     all_docs: set[str] = set()
     for docs in outputs.values():
@@ -234,13 +320,14 @@ def compute_metrics(
         model_path = os.path.join(model_dir, doc)
         if not (os.path.exists(gt_path) and os.path.exists(model_path)):
             continue
-        gt_events = parse_events_json(gt_path)
-        model_events = parse_events_json(model_path)
-        pairs, perfect, realonly = pair_document(gt_events, model_events, schema)
+        pairs, perfect, realonly = pair_document(
+            parse_events_json(gt_path), parse_events_json(model_path), schema
+        )
         pairs_by_doc[doc] = pairs
         perfect_by_doc[doc] = perfect
         realonly_by_doc[doc] = realonly
 
+    ann_event: dict[tuple[str, str, int], dict | None] = {}
     per_annotator: dict[str, dict] = {}
     slot_totals: Counter = Counter()
     ann_totals: Counter = Counter()
@@ -250,6 +337,8 @@ def compute_metrics(
         slot_counts: Counter = Counter()
         ann_counts: Counter = Counter()
         pairs_seen = 0
+        modified_vs_gt = 0
+        dropped_gt = 0
         for doc, events in outputs[annotator].items():
             pairs = pairs_by_doc.get(doc)
             if pairs is None:
@@ -277,32 +366,45 @@ def compute_metrics(
             assigned = assign_events_to_pairs(to_match, pairs, fields)
             for pair_idx, (gt_ev, model_ev) in enumerate(pairs):
                 ae = assigned[pair_idx]
+                ann_event[(annotator, doc, pair_idx)] = ae
                 if ae is None:
+                    if gt_ev is not None:
+                        dropped_gt += 1
                     continue
                 categories: set[str] = set()
+                differs_from_gt = False
                 for path in fields:
-                    category = bucket_field(
-                        field_value(ae, path),
-                        field_value(gt_ev, path),
-                        field_value(model_ev, path),
-                    )
+                    av = field_value(ae, path)
+                    if av != field_value(gt_ev, path):
+                        differs_from_gt = True
+                    category = bucket_field(av, field_value(gt_ev, path), field_value(model_ev, path))
                     if category is None:
                         continue
                     slot_counts[category] += 1
                     per_field[path][category] += 1
                     categories.add(category)
+                if differs_from_gt:
+                    modified_vs_gt += 1
                 if categories:
                     ann_counts["hybrid" if len(categories) > 1 else next(iter(categories))] += 1
 
+        flag_map = flags[annotator]
         per_annotator[annotator] = {
             "docs": len(outputs[annotator]),
+            "docs_with_anns": sum(1 for evs in outputs[annotator].values() if evs),
             "annotations": sum(len(evs) for evs in outputs[annotator].values()),
             "pairs": pairs_seen,
+            "flags": sum(len(v) for v in flag_map.values()),
+            "flagged_docs": len({doc for (doc, _) in flag_map}),
+            "modified_vs_gt": modified_vs_gt,
+            "dropped_gt": dropped_gt,
             "slots": dict(slot_counts),
             "buckets": dict(ann_counts),
         }
         slot_totals.update(slot_counts)
         ann_totals.update(ann_counts)
+
+    agreement = _compute_agreement(annotators, outputs, pairs_by_doc, ann_event, fields)
 
     return {
         "fields": fields,
@@ -311,6 +413,63 @@ def compute_metrics(
         "slot_totals": dict(slot_totals),
         "ann_totals": dict(ann_totals),
         "per_field": {path: dict(counts) for path, counts in per_field.items()},
+        "agreement": agreement,
+    }
+
+
+def _compute_agreement(
+    annotators: list[str],
+    outputs: dict[str, dict[str, list[dict]]],
+    pairs_by_doc: dict[str, list],
+    ann_event: dict[tuple[str, str, int], dict | None],
+    fields: list[str],
+) -> dict | None:
+    """Fleiss' kappa per field over the largest reviewer subset sharing docs."""
+    if len(annotators) < 2:
+        return None
+    doc_sets = {a: set(outputs[a].keys()) for a in annotators}
+    group, shared = _largest_shared_group(doc_sets)
+    if len(group) < 2 or not shared:
+        return None
+
+    def observations(label_of):
+        obs: list[list[str]] = []
+        for doc in shared:
+            pairs = pairs_by_doc.get(doc)
+            if pairs is None:
+                continue
+            for pair_idx in range(len(pairs)):
+                obs.append([label_of(a, doc, pair_idx) for a in group])
+        return obs
+
+    def matrix(obs):
+        # Every row lives in one shared category space so Fleiss' columns align.
+        categories = sorted({label for row in obs for label in row})
+        index = {category: i for i, category in enumerate(categories)}
+        rows: list[list[int]] = []
+        for row in obs:
+            counts = [0] * len(categories)
+            for label in row:
+                counts[index[label]] += 1
+            rows.append(counts)
+        return rows
+
+    def label(path):
+        return lambda a, doc, pi: field_value(ann_event.get((a, doc, pi)), path)
+
+    per_field_kappa = {path: fleiss_kappa(matrix(observations(label(path)))) for path in fields}
+    # Overall: namespace each field's labels, then align every row at once.
+    pooled_obs: list[list[str]] = []
+    for path in fields:
+        pooled_obs.extend(observations(lambda a, doc, pi, p=path: f"{p}:{field_value(ann_event.get((a, doc, pi)), p)}"))
+    overall = fleiss_kappa(matrix(pooled_obs))
+
+    return {
+        "group": group,
+        "shared_docs": len(shared),
+        "raters": len(group),
+        "per_field": per_field_kappa,
+        "overall": overall,
     }
 
 
@@ -318,9 +477,39 @@ def _pct(part: int, whole: int) -> str:
     return f"{(100 * part / whole):.1f}%" if whole else "0.0%"
 
 
+def _kappa_cell(value: float) -> str:
+    return "N/A" if value != value else f"{value:.3f}"  # value != value catches nan
+
+
 def render_markdown(metrics: dict, title: str = "Annotation metrics") -> str:
     fields = metrics["fields"]
-    lines = [f"# {title}", "", f"Fields: {', '.join(fields)}", "", "## Who won", ""]
+    per_annotator = metrics["per_annotator"]
+    lines = [f"# {title}", "", f"Fields: {', '.join(fields)}", ""]
+
+    lines += ["## 1. Annotator overview", "", "### Per annotator", ""]
+    lines.append("| Annotator | Docs | Docs w/ ann | Pairs | Anns | Flags | Flagged docs | % docs flagged | % pairs flagged |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for annotator in metrics["annotators"]:
+        stats = per_annotator[annotator]
+        lines.append(
+            f"| {annotator} | {stats['docs']} | {stats['docs_with_anns']} | {stats['pairs']} | "
+            f"{stats['annotations']} | {stats['flags']} | {stats['flagged_docs']} | "
+            f"{_pct(stats['flagged_docs'], stats['docs'])} | {_pct(stats['flags'], stats['pairs'])} |"
+        )
+    lines.append("")
+
+    lines += ["### Annotations vs GT", "", "| Annotator | Anns / doc | Modified vs GT | Dropped GT |", "|---|---|---|---|"]
+    for annotator in metrics["annotators"]:
+        stats = per_annotator[annotator]
+        per_doc = stats["annotations"] / stats["docs_with_anns"] if stats["docs_with_anns"] else 0.0
+        lines.append(
+            f"| {annotator} | {per_doc:.1f} | "
+            f"{stats['modified_vs_gt']} ({_pct(stats['modified_vs_gt'], stats['pairs'])}) | "
+            f"{stats['dropped_gt']} ({_pct(stats['dropped_gt'], stats['pairs'])}) |"
+        )
+    lines.append("")
+
+    lines += ["## 2. Who won — GT vs Model vs correction", ""]
     slot_totals = metrics["slot_totals"]
     ann_totals = metrics["ann_totals"]
     total_slots = sum(slot_totals.values())
@@ -334,21 +523,29 @@ def render_markdown(metrics: dict, title: str = "Annotation metrics") -> str:
         slot_pct = "—" if category == "hybrid" else _pct(slots, total_slots)
         lines.append(f"| {category} | {slot_cell} | {slot_pct} | {anns} | {_pct(anns, total_anns)} |")
     lines.append("")
-    lines.append("## Per field")
+
+    lines += ["## 3. Inter-annotator agreement (Fleiss κ)", ""]
+    agreement = metrics.get("agreement")
+    if not agreement:
+        lines.append("_No documents shared by two or more annotators._")
+        lines.append("")
+        return "\n".join(lines)
+    lines.append(
+        f"Largest overlapping subset: {', '.join(agreement['group'])} "
+        f"({agreement['raters']} reviewers, {agreement['shared_docs']} shared docs)."
+    )
     lines.append("")
-    lines.append("| Field | " + " | ".join(SLOT_CATEGORIES) + " |")
-    lines.append("|---|" + "|".join(["---"] * len(SLOT_CATEGORIES)) + "|")
+    lines.append("| Field | Fleiss κ |")
+    lines.append("|---|---|")
     for path in fields:
-        counts = metrics["per_field"].get(path, {})
-        total = sum(counts.values())
-        cells = [f"{counts.get(cat, 0)} ({_pct(counts.get(cat, 0), total)})" for cat in SLOT_CATEGORIES]
-        lines.append(f"| {path} | " + " | ".join(cells) + " |")
+        lines.append(f"| {path} | {_kappa_cell(agreement['per_field'].get(path, float('nan')))} |")
+    lines.append(f"| **overall** | **{_kappa_cell(agreement['overall'])}** |")
     lines.append("")
     return "\n".join(lines)
 
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compute who-won annotation metrics.")
+    parser = argparse.ArgumentParser(description="Compute annotation metrics and reviewer agreement.")
     parser.add_argument("--annotations-dir", required=True)
     parser.add_argument("--gt-dir", required=True)
     parser.add_argument("--model-dir", required=True)
