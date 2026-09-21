@@ -22,7 +22,10 @@ The report has four sections:
   annotator emptied) or ``corrected`` (a value matching neither side; zero on a
   clean run because the app only clones a side).
 * **Inter-annotator agreement** — Fleiss' kappa per field over the largest set
-  of reviewers that share documents.
+  of reviewers that share documents, reported twice: over every shared pair and
+  over only the pairs that no reviewer flagged. Flagged pairs are the contested
+  cases the flag mechanism is meant to isolate, so agreement is typically higher
+  once they are excluded.
 """
 
 from __future__ import annotations
@@ -404,7 +407,7 @@ def compute_metrics(
         slot_totals.update(slot_counts)
         ann_totals.update(ann_counts)
 
-    agreement = _compute_agreement(annotators, outputs, pairs_by_doc, ann_event, fields)
+    agreement = _compute_agreement(annotators, outputs, pairs_by_doc, ann_event, fields, flags)
 
     return {
         "fields": fields,
@@ -423,8 +426,15 @@ def _compute_agreement(
     pairs_by_doc: dict[str, list],
     ann_event: dict[tuple[str, str, int], dict | None],
     fields: list[str],
+    flags: dict[str, dict[tuple[str, int | None], list]],
 ) -> dict | None:
-    """Fleiss' kappa per field over the largest reviewer subset sharing docs."""
+    """Fleiss' kappa per field over the largest reviewer subset sharing docs.
+
+    Computed twice over the same subset: ``all`` uses every shared pair, while
+    ``unflagged`` keeps only pairs that no reviewer in the group flagged. A pair
+    is treated as flagged if any group member flagged it (union), so the
+    ``unflagged`` set isolates the cases reviewers left uncontested.
+    """
     if len(annotators) < 2:
         return None
     doc_sets = {a: set(outputs[a].keys()) for a in annotators}
@@ -432,15 +442,19 @@ def _compute_agreement(
     if len(group) < 2 or not shared:
         return None
 
-    def observations(label_of):
-        obs: list[list[str]] = []
-        for doc in shared:
-            pairs = pairs_by_doc.get(doc)
-            if pairs is None:
-                continue
-            for pair_idx in range(len(pairs)):
-                obs.append([label_of(a, doc, pair_idx) for a in group])
-        return obs
+    def pair_flagged(doc: str, pair_idx: int) -> bool:
+        return any(flags.get(a, {}).get((doc, pair_idx)) for a in group)
+
+    all_items: list[tuple[str, int]] = []
+    unflagged_items: list[tuple[str, int]] = []
+    for doc in shared:
+        pairs = pairs_by_doc.get(doc)
+        if pairs is None:
+            continue
+        for pair_idx in range(len(pairs)):
+            all_items.append((doc, pair_idx))
+            if not pair_flagged(doc, pair_idx):
+                unflagged_items.append((doc, pair_idx))
 
     def matrix(obs):
         # Every row lives in one shared category space so Fleiss' columns align.
@@ -454,22 +468,35 @@ def _compute_agreement(
             rows.append(counts)
         return rows
 
-    def label(path):
-        return lambda a, doc, pi: field_value(ann_event.get((a, doc, pi)), path)
+    def variant(items: list[tuple[str, int]]) -> dict | None:
+        if not items:
+            return None
 
-    per_field_kappa = {path: fleiss_kappa(matrix(observations(label(path)))) for path in fields}
-    # Overall: namespace each field's labels, then align every row at once.
-    pooled_obs: list[list[str]] = []
-    for path in fields:
-        pooled_obs.extend(observations(lambda a, doc, pi, p=path: f"{p}:{field_value(ann_event.get((a, doc, pi)), p)}"))
-    overall = fleiss_kappa(matrix(pooled_obs))
+        def observations(label_of):
+            return [[label_of(a, doc, pi) for a in group] for (doc, pi) in items]
+
+        per_field_kappa = {
+            path: fleiss_kappa(matrix(observations(
+                lambda a, doc, pi, p=path: field_value(ann_event.get((a, doc, pi)), p)
+            )))
+            for path in fields
+        }
+        # Overall: namespace each field's labels, then align every row at once.
+        pooled_obs: list[list[str]] = []
+        for path in fields:
+            pooled_obs.extend(observations(
+                lambda a, doc, pi, p=path: f"{p}:{field_value(ann_event.get((a, doc, pi)), p)}"
+            ))
+        return {"per_field": per_field_kappa, "overall": fleiss_kappa(matrix(pooled_obs))}
 
     return {
         "group": group,
         "shared_docs": len(shared),
         "raters": len(group),
-        "per_field": per_field_kappa,
-        "overall": overall,
+        "pairs_total": len(all_items),
+        "pairs_unflagged": len(unflagged_items),
+        "all": variant(all_items),
+        "unflagged": variant(unflagged_items),
     }
 
 
@@ -534,12 +561,31 @@ def render_markdown(metrics: dict, title: str = "Annotation metrics") -> str:
         f"Largest overlapping subset: {', '.join(agreement['group'])} "
         f"({agreement['raters']} reviewers, {agreement['shared_docs']} shared docs)."
     )
+    flagged = agreement["pairs_total"] - agreement["pairs_unflagged"]
+    lines.append(
+        f"{agreement['pairs_total']} overlap pairs, {flagged} flagged by at least "
+        f"one reviewer, {agreement['pairs_unflagged']} unflagged."
+    )
     lines.append("")
-    lines.append("| Field | Fleiss κ |")
-    lines.append("|---|---|")
+
+    def _variant_cell(variant: dict | None, path: str) -> str:
+        if not variant:
+            return "N/A"
+        return _kappa_cell(variant["per_field"].get(path, float("nan")))
+
+    def _overall_cell(variant: dict | None) -> str:
+        return _kappa_cell(variant["overall"]) if variant else "N/A"
+
+    unflagged, all_pairs = agreement["unflagged"], agreement["all"]
+    lines.append("| Field | κ (unflagged pairs) | κ (all pairs) |")
+    lines.append("|---|---|---|")
     for path in fields:
-        lines.append(f"| {path} | {_kappa_cell(agreement['per_field'].get(path, float('nan')))} |")
-    lines.append(f"| **overall** | **{_kappa_cell(agreement['overall'])}** |")
+        lines.append(
+            f"| {path} | {_variant_cell(unflagged, path)} | {_variant_cell(all_pairs, path)} |"
+        )
+    lines.append(
+        f"| **overall** | **{_overall_cell(unflagged)}** | **{_overall_cell(all_pairs)}** |"
+    )
     lines.append("")
     return "\n".join(lines)
 

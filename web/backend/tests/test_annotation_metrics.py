@@ -287,7 +287,7 @@ class AgreementTests(unittest.TestCase):
         self.assertIsNotNone(agreement)
         self.assertEqual(sorted(agreement["group"]), ["a", "b"])
         self.assertEqual(agreement["shared_docs"], 1)
-        self.assertIn("eventType", agreement["per_field"])
+        self.assertIn("eventType", agreement["all"]["per_field"])
 
     def test_uneven_category_spread_does_not_crash(self):
         # Reviewers disagree on one pair and agree on another, so the two items
@@ -295,9 +295,36 @@ class AgreementTests(unittest.TestCase):
         result = self._shared_doc_project("gt", "model").metrics()
         agreement = result["agreement"]
         self.assertIsNotNone(agreement)
-        for value in agreement["per_field"].values():
+        for value in agreement["all"]["per_field"].values():
             self.assertTrue(isinstance(value, float))
-        self.assertTrue(isinstance(agreement["overall"], float))
+        self.assertTrue(isinstance(agreement["all"]["overall"], float))
+
+    def test_flag_split_partitions_pairs(self):
+        # One of the two shared pairs is flagged -> the unflagged variant keeps
+        # the other, and both variants are still computed.
+        project = self._shared_doc_project("gt", "gt")
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n")
+        agreement = project.metrics()["agreement"]
+        self.assertEqual(agreement["pairs_total"], 2)
+        self.assertEqual(agreement["pairs_unflagged"], 1)
+        self.assertIsNotNone(agreement["all"])
+        self.assertIsNotNone(agreement["unflagged"])
+        self.assertIn("eventType", agreement["unflagged"]["per_field"])
+
+    def test_no_flags_makes_variants_identical(self):
+        agreement = self._shared_doc_project("gt", "model").metrics()["agreement"]
+        self.assertEqual(agreement["pairs_unflagged"], agreement["pairs_total"])
+        self.assertEqual(agreement["unflagged"]["overall"], agreement["all"]["overall"])
+
+    def test_all_pairs_flagged_drops_unflagged_variant(self):
+        # A flag from either reviewer marks the pair as contested (union rule).
+        project = self._shared_doc_project("gt", "gt")
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n")
+        project.add_flag_log("b", "File: d.json | Pair: 1 | Reason: Flagged fields [unit]\n")
+        agreement = project.metrics()["agreement"]
+        self.assertEqual(agreement["pairs_unflagged"], 0)
+        self.assertIsNone(agreement["unflagged"])
+        self.assertIsNotNone(agreement["all"])
 
     def test_no_agreement_with_single_annotator(self):
         project = TmpProject()
@@ -322,6 +349,21 @@ class RenderTests(unittest.TestCase):
             self.assertIn(heading, text)
         for category in am.ANN_CATEGORIES:
             self.assertIn(category, text)
+
+    def test_agreement_table_renders_both_flag_columns(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventO"}
+        gt2 = {"quantity": span("9", 20, 21), "unit": span("cases", 22, 27), "eventType": "EventO"}
+        model2 = {"quantity": span("9", 20, 21), "unit": span("incidents", 22, 31), "eventType": "EventP"}
+        project.add_doc("d.json", [gt, gt2], [model, model2])
+        project.add_output("a", {"d.json": [dict(gt), dict(gt2)]})
+        project.add_output("b", {"d.json": [dict(gt), dict(gt2)]})
+        project.add_flag_log("a", "File: d.json | Pair: 0 | Reason: Flagged fields [unit]\n")
+        text = am.render_markdown(project.metrics(), title="T")
+        self.assertIn("κ (unflagged pairs)", text)
+        self.assertIn("κ (all pairs)", text)
+        self.assertIn("flagged by at least", text)
 
 
 if __name__ == "__main__":

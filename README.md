@@ -62,7 +62,9 @@ reviewer agreed and raises the rest as conflicts, which
 `web/backend/annotation_metrics.py` reports on the collected outputs: per-reviewer
 counts, how far each moved from ground truth, where every accepted field ended up
 — ground truth, model, a field-by-field hybrid, a dropped field, or a free-text
-correction — and inter-reviewer agreement as Fleiss' kappa per field. Each saved
+correction — and inter-reviewer agreement as Fleiss' kappa per field, reported
+both over every shared pair and over only the pairs no reviewer flagged, so the
+contested cases the flag mechanism isolates can be read separately. Each saved
 value is traced back to the pair it was decided on by replaying the reviewer's
 exact pairing; because the app only ever clones a side, the correction bucket
 stays at zero on a clean run, so anything above zero is a real free-text edit or
