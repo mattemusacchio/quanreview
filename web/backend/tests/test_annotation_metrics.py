@@ -1,0 +1,213 @@
+import json
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import annotation_metrics as am
+
+SCHEMA = {
+    "fields": [
+        {"path": "quantity"},
+        {"path": "unit"},
+        {"path": "eventType"},
+    ]
+}
+
+
+def span(text, begin, end):
+    return {"text": text, "begin": begin, "end": end}
+
+
+class TmpProject:
+    """A throwaway annotations/GT/model directory tree for one test."""
+
+    def __init__(self):
+        self.root = tempfile.mkdtemp()
+        self.gt = os.path.join(self.root, "gt")
+        self.model = os.path.join(self.root, "model")
+        self.ann = os.path.join(self.root, "ann")
+        for path in (self.gt, self.model, self.ann):
+            os.makedirs(path)
+
+    def add_doc(self, doc, gt_events, model_events):
+        self._write(os.path.join(self.gt, doc), gt_events)
+        self._write(os.path.join(self.model, doc), model_events)
+
+    def add_output(self, annotator, mapping):
+        self._write(os.path.join(self.ann, f"{annotator}_out.json"), mapping)
+
+    @staticmethod
+    def _write(path, payload):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+
+    def metrics(self, **kwargs):
+        return am.compute_metrics(self.ann, self.gt, self.model, SCHEMA, **kwargs)
+
+
+class BucketFieldTests(unittest.TestCase):
+    def test_all_missing_is_none(self):
+        self.assertIsNone(am.bucket_field(am.MISSING, am.MISSING, am.MISSING))
+
+    def test_both_agree(self):
+        self.assertEqual(am.bucket_field("5", "5", "5"), "both_agree")
+
+    def test_gt_and_model_picks(self):
+        self.assertEqual(am.bucket_field("5", "5", "6"), "GT")
+        self.assertEqual(am.bucket_field("6", "5", "6"), "Model")
+
+    def test_dropped_when_annotator_empties(self):
+        self.assertEqual(am.bucket_field(am.MISSING, "5", am.MISSING), "dropped")
+
+    def test_corrected_when_matches_neither(self):
+        self.assertEqual(am.bucket_field("7", "5", "6"), "corrected")
+
+
+class SchemaFieldTests(unittest.TestCase):
+    def test_paths_from_schema(self):
+        self.assertEqual(am.schema_field_paths(SCHEMA), ["quantity", "unit", "eventType"])
+
+    def test_banned_field_removed(self):
+        self.assertEqual(am.schema_field_paths(SCHEMA, banned=["eventType"]), ["quantity", "unit"])
+
+    def test_empty_schema(self):
+        self.assertEqual(am.schema_field_paths(None), [])
+
+
+class DiscoveryTests(unittest.TestCase):
+    def test_discovers_and_excludes(self):
+        project = TmpProject()
+        project.add_output("alice", {})
+        project.add_output("bob", {})
+        self.assertEqual(am.discover_annotators(project.ann), ["alice", "bob"])
+        self.assertEqual(am.discover_annotators(project.ann, exclude=["bob"]), ["alice"])
+
+
+class WhoWonTests(unittest.TestCase):
+    def test_perfect_match_is_both_agree_and_makes_no_pair(self):
+        project = TmpProject()
+        event = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        project.add_doc("d.json", [event], [dict(event)])
+        project.add_output("a", {"d.json": [dict(event)]})
+        result = project.metrics()
+        self.assertEqual(result["per_annotator"]["a"]["pairs"], 0)
+        self.assertEqual(result["ann_totals"].get("both_agree"), 1)
+        self.assertNotIn("corrected", result["slot_totals"])
+
+    def test_gt_pick_on_discrepant_pair(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        project.add_output("a", {"d.json": [dict(gt)]})
+        result = project.metrics()
+        self.assertEqual(result["per_annotator"]["a"]["pairs"], 1)
+        self.assertEqual(result["per_field"]["unit"].get("GT"), 1)
+        self.assertEqual(result["slot_totals"].get("corrected", 0), 0)
+
+    def test_model_pick_on_discrepant_pair(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        project.add_output("a", {"d.json": [dict(model)]})
+        result = project.metrics()
+        self.assertEqual(result["per_field"]["unit"].get("Model"), 1)
+
+    def test_hybrid_annotation(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventO"}
+        project.add_doc("d.json", [gt], [model])
+        # Keep GT unit but Model eventType -> a field-by-field hybrid.
+        saved = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventO"}
+        project.add_output("a", {"d.json": [saved]})
+        result = project.metrics()
+        self.assertEqual(result["ann_totals"].get("hybrid"), 1)
+        self.assertEqual(result["per_field"]["unit"].get("GT"), 1)
+        self.assertEqual(result["per_field"]["eventType"].get("Model"), 1)
+        self.assertEqual(result["slot_totals"].get("corrected", 0), 0)
+
+    def test_dropped_field(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        # Annotator keeps the pair but leaves the unit empty.
+        saved = {"quantity": span("5", 0, 1), "eventType": "EventP"}
+        project.add_output("a", {"d.json": [saved]})
+        result = project.metrics()
+        self.assertEqual(result["per_field"]["unit"].get("dropped"), 1)
+
+    def test_cloning_a_side_never_produces_corrected(self):
+        """Repeated quantities must not fool the tracer into a false correction."""
+        project = TmpProject()
+        gt = [
+            {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"},
+            {"quantity": span("5", 50, 51), "unit": span("cases", 52, 57), "eventType": "EventO"},
+        ]
+        model = [
+            {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"},
+            {"quantity": span("5", 50, 51), "unit": span("incidents", 52, 61), "eventType": "EventO"},
+        ]
+        project.add_doc("d.json", gt, model)
+        # Annotator kept GT on the first pair, Model on the second.
+        project.add_output("a", {"d.json": [dict(gt[0]), dict(model[1])]})
+        result = project.metrics()
+        self.assertEqual(result["slot_totals"].get("corrected", 0), 0)
+        self.assertEqual(result["per_field"]["unit"].get("GT"), 1)
+        self.assertEqual(result["per_field"]["unit"].get("Model"), 1)
+
+    def test_free_text_correction_is_flagged(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventO"}
+        project.add_doc("d.json", [gt], [model])
+        # Annotator overrode eventType to a value on neither side.
+        saved = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventA"}
+        project.add_output("a", {"d.json": [saved]})
+        result = project.metrics()
+        self.assertEqual(result["per_field"]["eventType"].get("corrected"), 1)
+
+
+class BanAndExcludeTests(unittest.TestCase):
+    def _project_with_eventtype_discrepancy(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventO"}
+        project.add_doc("d.json", [gt], [model])
+        project.add_output("a", {"d.json": [dict(gt)]})
+        project.add_output("b", {"d.json": [dict(model)]})
+        return project
+
+    def test_banned_field_absent_from_metrics(self):
+        project = self._project_with_eventtype_discrepancy()
+        result = project.metrics(banned_fields=["eventType"])
+        self.assertEqual(result["fields"], ["quantity", "unit"])
+        self.assertNotIn("eventType", result["per_field"])
+
+    def test_excluded_annotator_absent(self):
+        project = self._project_with_eventtype_discrepancy()
+        result = project.metrics(exclude_annotators=["b"])
+        self.assertEqual(result["annotators"], ["a"])
+        self.assertNotIn("b", result["per_annotator"])
+
+
+class RenderTests(unittest.TestCase):
+    def test_markdown_renders_all_categories(self):
+        project = TmpProject()
+        gt = {"quantity": span("5", 0, 1), "unit": span("people", 2, 8), "eventType": "EventP"}
+        model = {"quantity": span("5", 0, 1), "unit": span("persons", 2, 9), "eventType": "EventP"}
+        project.add_doc("d.json", [gt], [model])
+        project.add_output("a", {"d.json": [dict(gt)]})
+        text = am.render_markdown(project.metrics(), title="T")
+        self.assertIn("# T", text)
+        for category in am.ANN_CATEGORIES:
+            self.assertIn(category, text)
+
+
+if __name__ == "__main__":
+    unittest.main()
