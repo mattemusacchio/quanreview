@@ -1,0 +1,33 @@
+[
+  {
+    "quantity": {
+      "text": "3,412",
+      "begin": 23,
+      "end": 28
+    },
+    "unit": {
+      "text": "homes",
+      "begin": 29,
+      "end": 34
+    },
+    "eventType": "EventP"
+  },
+  {
+    "quantity": {
+      "text": "15,600",
+      "begin": 44,
+      "end": 50
+    },
+    "eventDescription": {
+      "text": "without shelter",
+      "begin": 58,
+      "end": 73
+    },
+    "modifier": {
+      "text": "unable",
+      "begin": 102,
+      "end": 108
+    },
+    "eventType": "EventP"
+  }
+]

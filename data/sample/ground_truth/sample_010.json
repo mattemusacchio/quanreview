@@ -1,0 +1,33 @@
+[
+  {
+    "quantity": {
+      "text": "1,870",
+      "begin": 26,
+      "end": 31
+    },
+    "unit": {
+      "text": "children",
+      "begin": 32,
+      "end": 40
+    },
+    "eventType": "EventP"
+  },
+  {
+    "quantity": {
+      "text": "5,000",
+      "begin": 94,
+      "end": 99
+    },
+    "unit": {
+      "text": "children",
+      "begin": 100,
+      "end": 108
+    },
+    "modifier": {
+      "text": "may",
+      "begin": 148,
+      "end": 151
+    },
+    "eventType": "EventO"
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "name": "ner_tagging_ui",
+  "version": "1.0.0",
+  "description": "A desktop application built with Python and Eel, providing a HTML/CSS/JavaScript frontend.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "jest": {
+    "roots": [
+      "<rootDir>/../js"
+    ],
+    "testMatch": [
+      "**/?(*.)+(spec|test).js"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^26.6.3"
+  }
+}

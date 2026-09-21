@@ -1,0 +1,43 @@
+[
+  {
+    "quantity": {
+      "text": "12,000",
+      "begin": 26,
+      "end": 32
+    },
+    "unit": {
+      "text": "households",
+      "begin": 33,
+      "end": 43
+    },
+    "eventDescription": {
+      "text": "displaced",
+      "begin": 49,
+      "end": 58
+    },
+    "eventType": "EventP"
+  },
+  {
+    "quantity": {
+      "text": "3,500",
+      "begin": 124,
+      "end": 129
+    },
+    "unit": {
+      "text": "families",
+      "begin": 135,
+      "end": 143
+    },
+    "modifier": {
+      "text": "potentially",
+      "begin": 153,
+      "end": 164
+    },
+    "eventDescription": {
+      "text": "affected",
+      "begin": 165,
+      "end": 173
+    },
+    "eventType": "EventP"
+  }
+]

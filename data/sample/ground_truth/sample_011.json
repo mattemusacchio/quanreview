@@ -1,0 +1,33 @@
+[
+  {
+    "quantity": {
+      "text": "22,450",
+      "begin": 36,
+      "end": 42
+    },
+    "unit": {
+      "text": "children",
+      "begin": 43,
+      "end": 51
+    },
+    "eventType": "EventP"
+  },
+  {
+    "eventDescription": {
+      "text": "identified",
+      "begin": 92,
+      "end": 102
+    },
+    "quantity": {
+      "text": "63",
+      "begin": 103,
+      "end": 105
+    },
+    "unit": {
+      "text": "zero-dose children",
+      "begin": 106,
+      "end": 124
+    },
+    "eventType": "EventP"
+  }
+]

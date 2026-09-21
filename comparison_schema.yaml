@@ -1,0 +1,9 @@
+# when selecting nested json objects in the form key:{subkey1:value1,subkey2:value2}
+# to compare just discrepancies on value, use the following format:
+# path: key->subkey
+
+fields:
+  - path: quantity
+  - path: unit
+  - path: modifier
+  - path: eventType

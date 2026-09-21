@@ -1,0 +1,15 @@
+[
+  {
+    "quantity": {
+      "text": "45,800",
+      "begin": 23,
+      "end": 29
+    },
+    "unit": {
+      "text": "children",
+      "begin": 30,
+      "end": 38
+    },
+    "eventType": "EventP"
+  }
+]

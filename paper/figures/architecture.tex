@@ -1,0 +1,270 @@
+% =====================================================================
+%  architecture.tex -- system architecture figure
+%  NER tag-correction tool (blind multi-annotator adjudication pipeline)
+%
+%  DUAL MODE
+%  ---------
+%  (a) Standalone:  pdflatex architecture.tex
+%  (b) Included:    preamble needs  \usepackage{tikz}
+%                   body:
+%                       \begin{figure*}[t]\centering
+%                         \input{figures/architecture}
+%                         \caption{...}\label{fig:architecture}
+%                       \end{figure*}
+%  The guard detects the mode by testing whether TikZ is already loaded.
+%
+%  GEOMETRY
+%  --------
+%  Coordinates are in abstract units; 1 unit = \AFU cm is set so the
+%  drawing is exactly 13.50 units = 6.6in wide (full ACL text width).
+%  Canvas 13.50 x 9.95 units = 16.76 x 12.36 cm = 6.60 x 4.87 in,
+%  aspect 1.357:1.  At that size 1 unit = 35.20pt, so the smallest text
+%  in the figure (0.205 units) sets at 7.22pt.  KEEP EVERY FONT AT OR
+%  ABOVE 0.205 units if you change \AFU or the canvas width.
+%
+%  LAYOUT
+%  ------
+%  Four full-width horizontal bands, strict top-to-bottom flow,
+%  alternating automated / human so the human-in-the-loop boundary is
+%  unmistakable.  No edge crossings.
+%    A  automated  (1) corpus + config      (2) select & assign
+%    B  human      (3) blind pairwise review
+%    C  automated  (4) outputs  (5) integration  (6) agreement report
+%    D  human      (7) conflict adjudication
+%
+%  COLOUR
+%  ------
+%  Grayscale-safe by construction: all text is black, and the only
+%  accent (AFblind) is separated from the other fills by LIGHTNESS
+%  (white 1.00 > AFdata 0.91 > AFblind 0.82), not by hue.  Human bands
+%  are additionally marked by hatching and a heavy dashed border.
+%
+%  RESTYLING
+%  ---------
+%  Change the \definecolor block and the \tikzset block; leave the body.
+% =====================================================================
+
+\ifcsname tikzpicture\endcsname
+  \def\AFStandalone{0}%
+\else
+  \def\AFStandalone{1}%
+\fi
+
+\if1\AFStandalone
+  \documentclass[border=3pt]{standalone}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+  \usepackage{tikz}
+  \begin{document}
+\fi
+
+\usetikzlibrary{arrows.meta}
+
+% 1 unit in cm: 6.6in / 13.50 units = 16.764cm / 13.50
+\providecommand{\AFU}{1.2418}
+
+% ---------------------------------------------------------------- colours
+\definecolor{AFink}{HTML}{1C1C1C}
+\definecolor{AFdata}{HTML}{E8E8E8}
+\definecolor{AFblind}{HTML}{C9D3E2}
+\definecolor{AFlaneA}{HTML}{FDFDFD}
+\definecolor{AFlaneH}{HTML}{EFECE6}
+\definecolor{AFhatch}{HTML}{D4D0C8}
+
+% ------------------------------------------------------------------ fonts
+% pt values = units x 35.20 ; the minimum used anywhere is 0.205u = 7.22pt
+\providecommand{\AFb}[1]{{\fontsize{8.62}{9.50}\selectfont\bfseries #1}}
+\providecommand{\AFpt}[1]{{\fontsize{9.50}{10.40}\selectfont\bfseries #1}}
+\providecommand{\AFm}[1]{{\fontsize{7.22}{9.50}\selectfont\ttfamily #1}}
+
+% ------------------------------------------------------------------ styles
+\tikzset{
+  AFbase/.style   = {draw=AFink, line width=0.5pt,
+                     inner xsep=0.124cm, inner ysep=0.070cm,
+                     align=left, text=AFink, anchor=south west,
+                     font=\fontsize{7.22}{9.50}\selectfont},
+  AFproc/.style   = {AFbase, fill=white},
+  AFfile/.style   = {AFbase, rounded corners=1.6pt, fill=AFdata},
+  AFconf/.style   = {AFbase, rounded corners=1.6pt, fill=white,
+                     dash pattern=on 2.3pt off 1.7pt},
+  AFpanel/.style  = {AFbase, line width=1.05pt, fill=AFblind, align=center},
+  AFreveal/.style = {AFbase, fill=white, dash pattern=on 2.6pt off 1.9pt},
+  AFstrip/.style  = {AFbase, fill=white, line width=0.68pt},
+  AFbandA/.style  = {draw=AFink, line width=0.56pt, fill=AFlaneA},
+  AFbandH/.style  = {draw=AFink, line width=1.40pt, fill=AFlaneH,
+                     dash pattern=on 4.2pt off 2.8pt},
+  AFflow/.style   = {draw=AFink, line width=0.80pt,
+                     -{Stealth[length=2.0mm,width=1.6mm]}},
+  AFbus/.style    = {draw=AFink, line width=0.56pt},
+  AFlabel/.style  = {font=\fontsize{7.22}{9.50}\selectfont, text=AFink,
+                     inner sep=0.5pt},
+  AFlane/.style   = {font=\fontsize{8.27}{9.50}\selectfont\bfseries,
+                     text=AFink, inner sep=0pt, anchor=base east},
+}
+
+% \AFnode{style}{x}{y}{w}{h}{content}  -- (x,y) is the south-west corner,
+% w/h in units.  Never put a \node (e.g. \AFbadge) inside #6.
+\providecommand{\AFnode}[6]{%
+  \pgfmathsetlengthmacro{\AFw}{#4*\AFU cm}%
+  \pgfmathsetlengthmacro{\AFh}{#5*\AFU cm}%
+  \pgfmathsetlengthmacro{\AFtw}{(#4-0.20)*\AFU cm}%
+  \node[#1, minimum width=\AFw, minimum height=\AFh, text width=\AFtw]
+       at (#2,#3) {#6};%
+}
+% \AFbadge{x}{y}{n} -- numbered disc centred on (x,y); 0.296u = 0.368cm
+\providecommand{\AFbadge}[3]{%
+  \node[circle, fill=AFink, text=white, inner sep=0pt, minimum size=0.368cm,
+        font=\fontsize{7.22}{7.22}\selectfont\bfseries] at (#1,#2) {#3};%
+}
+% \AFband{y0}{y1}{style} -- fill + border only
+\providecommand{\AFband}[3]{%
+  \draw[#3] (0.15,#1) rectangle (13.35,#2);%
+}
+% \AFbandlabel{y1}{label} -- drawn after any hatching so text stays clean
+\providecommand{\AFbandlabel}[2]{%
+  \node[AFlane] at (13.15,#1-0.335) {#2};%
+}
+% \AFhatchband{y0}{y1} -- diagonal hatching for the human bands
+\providecommand{\AFhatchband}[2]{%
+  \begin{scope}
+    \clip (0.15,#1) rectangle (13.35,#2);
+    \pgfmathsetmacro{\AFspan}{#2-#1}%
+    \foreach \AFk in {-4,-3.66,...,13.5}{%
+      \draw[AFhatch, line width=0.35pt] (\AFk,#1) -- (\AFk+\AFspan,#2);}
+  \end{scope}%
+}
+
+\begin{tikzpicture}[x=\AFU cm, y=\AFU cm]
+
+% =====================================================================
+%  BAND A (automated) -- corpus + configuration, selection + assignment
+% =====================================================================
+\AFband{7.90}{9.85}{AFbandA}
+\AFbandlabel{9.85}{AUTOMATED}
+
+\AFnode{AFfile}{0.35}{8.77}{6.20}{0.66}{%
+  \hspace*{0.373cm}\AFb{Corpus}\\
+  ground truth $\cdot$ model output $\cdot$ source text}
+\AFnode{AFconf}{0.35}{8.02}{6.20}{0.66}{%
+  \AFb{Configuration}\\
+  \AFm{annotation\_config.yaml\ \ comparison\_schema.yaml}}
+\AFnode{AFproc}{7.35}{8.02}{5.80}{1.41}{%
+  \hspace*{0.373cm}\AFb{Select \& assign}\\
+  \AFm{scripts/orchestrate.py}\\
+  keep only documents where GT and the model\\
+  disagree; seeded balanced assignment, $r$ each}
+
+\draw[AFbus] (6.55,9.10) -- (6.95,9.10);
+\draw[AFbus] (6.55,8.35) -- (6.95,8.35);
+\draw[AFbus] (6.95,8.35) -- (6.95,9.10);
+\draw[AFflow] (6.95,8.725) -- (7.35,8.725);
+
+% =====================================================================
+%  BAND B (human) -- blind pairwise review
+% =====================================================================
+\AFband{4.32}{7.58}{AFbandH}
+\AFhatchband{4.32}{7.58}
+\draw[AFbandH, fill=none] (0.15,4.32) rectangle (13.35,7.58);
+\AFbandlabel{7.58}{HUMAN IN THE LOOP}
+
+\AFnode{AFproc}{0.35}{5.89}{3.70}{1.27}{%
+  \hspace*{0.373cm}\AFb{Session backend}\\
+  \AFm{web\_app.py (Eel)}\\
+  pairs discrepant events by span\\
+  overlap; model-only dropped}
+\AFnode{AFpanel}{4.45}{5.89}{2.90}{1.27}{%
+  \AFpt{Annotation 1}\\
+  source text with spans\\
+  highlighted + fields}
+\AFnode{AFpanel}{7.85}{5.89}{2.90}{1.27}{%
+  \AFpt{Annotation 2}\\
+  source text with spans\\
+  highlighted + fields}
+\draw[AFflow] (7.42,6.60) -- (7.78,6.60);
+\draw[AFflow] (7.78,6.42) -- (7.42,6.42);
+\AFnode{AFreveal}{11.15}{5.89}{2.00}{1.27}{%
+  \AFb{Reveal}\\
+  opt-in toggle:\\
+  shows which side\\
+  is the model}
+
+\AFnode{AFstrip}{0.35}{5.30}{12.80}{0.41}{%
+  \textbf{Blinding:} the two candidates carry neutral positional labels;
+  left/right order is re-randomised for every pair}
+\AFnode{AFstrip}{0.35}{4.44}{12.80}{0.68}{%
+  \textbf{Decision}\quad Accept 1 $\cdot$ Accept 2 $\cdot$ Hybrid (per-field merge) $\cdot$\\
+  Flag + comment $\cdot$ Unaligned (keep original) $\cdot$ Skip $\cdot$ Undo}
+
+% =====================================================================
+%  BAND C (automated) -- outputs, integration, agreement report
+% =====================================================================
+\AFband{2.22}{4.00}{AFbandA}
+\AFbandlabel{4.00}{AUTOMATED}
+
+\AFnode{AFfile}{0.35}{2.34}{4.10}{1.24}{%
+  \hspace*{0.373cm}\AFb{Per-annotator outputs}\\
+  \AFm{results/<id>/<doc>.json}\\
+  \AFm{review\_state/\ \ output.json}\\
+  \AFm{flagged/skipped/comments .log}}
+\AFnode{AFproc}{4.85}{2.34}{4.30}{1.24}{%
+  \hspace*{0.373cm}\AFb{Integration}\\
+  \AFm{scripts/integrate\_annotations.py}\\
+  unanimous $\rightarrow$ \AFm{merged/}; else \AFm{conflicts/}\\
+  bundle. Exact-match IAA + Cohen's $\kappa$}
+\AFnode{AFproc}{9.55}{2.34}{3.60}{1.24}{%
+  \hspace*{0.373cm}\AFb{Agreement report}\\
+  \AFm{compute\_annotation\_stats.py}\\
+  per-field pairwise Cohen's $\kappa$\\
+  and Fleiss' $\kappa$ $\rightarrow$ Markdown}
+
+\draw[AFflow] (4.45,2.96) -- (4.85,2.96);
+% (4) feeds (6) directly: the stats script does NOT read integration output
+\draw[AFflow] (3.90,3.58) -- (3.90,3.80) -- (10.00,3.80) -- (10.00,3.58);
+
+% =====================================================================
+%  BAND D (human) -- conflict adjudication
+% =====================================================================
+\AFband{0.12}{1.90}{AFbandH}
+\AFhatchband{0.12}{1.90}
+\draw[AFbandH, fill=none] (0.15,0.12) rectangle (13.35,1.90);
+\AFbandlabel{1.90}{HUMAN IN THE LOOP}
+
+\AFnode{AFproc}{0.35}{0.24}{7.60}{1.24}{%
+  \hspace*{0.373cm}\AFb{Conflict adjudication}\\
+  \AFm{scripts/resolve\_conflicts.py}\\
+  reviewer lists the conflict bundles, then resolves each by\\
+  picking one annotator's output or supplying a merged JSON}
+\AFnode{AFfile}{8.35}{0.24}{4.80}{0.97}{%
+  \AFb{Resolved outputs}\\
+  \AFm{integration/resolved/<doc>.json}\\
+  \AFm{conflict\_resolution\_report.json}}
+\draw[AFflow] (7.95,0.86) -- (8.35,0.86);
+
+% =====================================================================
+%  INTER-BAND FLOW  (strictly top-to-bottom; no crossings)
+% =====================================================================
+\draw[AFflow] (8.00,8.02) -- (8.00,7.80) -- (2.20,7.80) -- (2.20,7.16);
+\node[AFlabel, anchor=base west] at (2.40,7.36) {\AFm{assignments/<id>.json}};
+
+\draw[AFflow] (2.40,4.32) -- (2.40,3.58);
+\node[AFlabel, anchor=base west] at (2.55,4.10) {results + logs};
+
+\draw[AFflow] (7.00,2.34) -- (7.00,1.48);
+\node[AFlabel, anchor=base west] at (7.15,2.00) {\AFm{conflicts/}};
+
+% =====================================================================
+%  numbered step discs, drawn last so they sit above the box borders
+% =====================================================================
+\AFbadge{0.60}{9.23}{1}
+\AFbadge{7.60}{9.23}{2}
+\AFbadge{0.60}{6.96}{3}
+\AFbadge{0.60}{3.38}{4}
+\AFbadge{5.10}{3.38}{5}
+\AFbadge{9.80}{3.38}{6}
+\AFbadge{0.60}{1.28}{7}
+
+\end{tikzpicture}
+
+\if1\AFStandalone
+  \end{document}
+\fi

@@ -1,0 +1,33 @@
+[
+  {
+    "eventDescription": {
+      "text": "confirmed",
+      "begin": 12,
+      "end": 21
+    },
+    "quantity": {
+      "text": "92",
+      "begin": 22,
+      "end": 24
+    },
+    "unit": {
+      "text": "new infections",
+      "begin": 25,
+      "end": 39
+    },
+    "eventType": "EventO"
+  },
+  {
+    "quantity": {
+      "text": "340",
+      "begin": 87,
+      "end": 90
+    },
+    "unit": {
+      "text": "tests",
+      "begin": 91,
+      "end": 96
+    },
+    "eventType": "EventO"
+  }
+]

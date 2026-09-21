@@ -1,0 +1,28 @@
+[
+  {
+    "quantity": {
+      "text": "56",
+      "begin": 23,
+      "end": 25
+    },
+    "unit": {
+      "text": "suspected cases",
+      "begin": 26,
+      "end": 41
+    },
+    "eventType": "EventO"
+  },
+  {
+    "quantity": {
+      "text": "7",
+      "begin": 81,
+      "end": 82
+    },
+    "eventDescription": {
+      "text": "laboratory-confirmed",
+      "begin": 93,
+      "end": 113
+    },
+    "eventType": "EventP"
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "quantity": {
+      "text": "218",
+      "begin": 52,
+      "end": 55
+    },
+    "eventDescription": {
+      "text": "hospitalised",
+      "begin": 63,
+      "end": 75
+    },
+    "eventType": "EventP"
+  }
+]

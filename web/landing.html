@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuanReview - Setup</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .file-form {
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 30px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        .submit-btn {
+            background-color: #1a73e8;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+
+        .submit-btn:hover {
+            background-color: #1557b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>QuanReview</h1>
+        
+        <div class="file-form">
+            <h2>Select JSON Files</h2>
+            <form id="fileForm" onsubmit="startValidation(event)">
+                <div class="form-group">
+                    <label for="inputFile">Input JSON File Path:</label>
+                    <input type="text" id="inputFile" required 
+                           placeholder="Path to input JSON file">
+                </div>
+                
+                <div class="form-group">
+                    <label for="outputFile">Output JSON File Path:</label>
+                    <input type="text" id="outputFile" required 
+                           placeholder="Path to save output JSON file">
+                </div>
+
+                <button type="submit" class="submit-btn">Start Validation</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function startValidation(event) {
+            event.preventDefault();
+            
+            const inputFile = document.getElementById('inputFile').value;
+            const outputFile = document.getElementById('outputFile').value;
+            
+            // Redirect to the validation page with the file paths as parameters
+            const params = new URLSearchParams({
+                input_file: inputFile,
+                output_file: outputFile
+            });
+            
+            window.location.href = `index.html?${params.toString()}`;
+        }
+
+        // Check if we were redirected here due to missing parameters
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('missing_params')) {
+                alert('Please specify input and output file paths.');
+            }
+        });
+    </script>
+</body>
+</html> 

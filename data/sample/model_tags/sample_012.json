@@ -1,0 +1,25 @@
+[
+  {
+    "modifier": {
+      "text": "not",
+      "begin": 62,
+      "end": 65
+    },
+    "eventDescription": {
+      "text": "verified",
+      "begin": 70,
+      "end": 78
+    },
+    "quantity": {
+      "text": "120",
+      "begin": 90,
+      "end": 93
+    },
+    "unit": {
+      "text": "hectares",
+      "begin": 105,
+      "end": 113
+    },
+    "eventType": "EventP"
+  }
+]

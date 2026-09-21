@@ -1,0 +1,38 @@
+[
+  {
+    "quantity": {
+      "text": "673",
+      "begin": 38,
+      "end": 41
+    },
+    "unit": {
+      "text": "cases",
+      "begin": 50,
+      "end": 55
+    },
+    "eventDescription": {
+      "text": "reported",
+      "begin": 61,
+      "end": 69
+    },
+    "eventType": "EventP"
+  },
+  {
+    "quantity": {
+      "text": "41",
+      "begin": 135,
+      "end": 137
+    },
+    "unit": {
+      "text": "deaths",
+      "begin": 138,
+      "end": 144
+    },
+    "eventDescription": {
+      "text": "attributed",
+      "begin": 164,
+      "end": 174
+    },
+    "eventType": "EventP"
+  }
+]

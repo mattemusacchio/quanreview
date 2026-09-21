@@ -1,0 +1,25 @@
+[
+  {
+    "quantity": {
+      "text": "1,204",
+      "begin": 27,
+      "end": 32
+    },
+    "unit": {
+      "text": "dengue",
+      "begin": 33,
+      "end": 39
+    },
+    "eventDescription": {
+      "text": "confirmed",
+      "begin": 51,
+      "end": 60
+    },
+    "modifier": {
+      "text": "roughly",
+      "begin": 97,
+      "end": 104
+    },
+    "eventType": "EventP"
+  }
+]

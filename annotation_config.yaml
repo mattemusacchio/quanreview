@@ -1,0 +1,58 @@
+# ============================================================
+# Multi-Annotator Orchestration Configuration
+# ============================================================
+# This file defines the annotation project: who the annotators
+# are, the desired redundancy level, and where data lives.
+#
+# Usage:
+#   uv run python scripts/orchestrate.py                    # generate assignments
+#   .\run_annotator.cmd <annotator_id>                      # launch per-annotator session on Windows
+#   ./run_annotator.sh <annotator_id>                       # launch per-annotator session on macOS/Linux
+# ============================================================
+
+# List of annotators participating in the project
+# Optional 'weight' field controls what % of docs each annotator gets.
+# Default: equal distribution. Weights are relative (e.g., 1/1/1/1 = 25% each).
+# Example: weight: 0.5 gives that annotator half the docs of someone with weight: 1.
+annotators:
+  - id: annotator_a
+    name: Annotator A
+  - id: annotator_b
+    name: Annotator B
+  - id: annotator_c
+    name: Annotator C
+  - id: annotator_d
+    name: Annotator D
+
+# Base redundancy for the standard dataset portion.
+# Must be <= number of annotators.
+redundancy: 2
+
+# Optional: give a validation subset a different redundancy.
+# If omitted, validation docs use the same redundancy as the rest.
+validation_redundancy: 2
+
+# Optional: limit how many discrepant documents are assigned in this run.
+# Useful for pilots or small batch tests.
+document_limit: 10
+
+# Optional: choose the validation subset size by count OR by percentage.
+# Use only one of these at a time.
+# validation_document_count: 5
+validation_document_percentage: 0
+
+# Assignment strategy: "random" (shuffled round-robin) or "sequential" (deterministic order)
+assignment_strategy: random
+
+# Source data directories (relative to project root)
+ground_truth_dir: data/sample/ground_truth
+model_tags_dir: data/sample/model_tags
+
+# Schema for field comparison
+schema_file: comparison_schema.yaml
+
+# Where to store assignments, results, and integration outputs
+output_dir: data/annotation_project
+
+# Random seed for reproducible assignment (only used when strategy is "random")
+seed: 42

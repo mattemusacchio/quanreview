@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuanReview</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .progress-container {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: #2831a7;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        .completion-message {
+            text-align: center;
+            padding: 40px;
+            margin: 20px auto;
+            max-width: 600px;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .completion-message h2 {
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+
+        .completion-message p {
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        .completion-message #outputFile {
+            font-family: monospace;
+            background-color: #e9ecef;
+            padding: 5px 10px;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="progressText" class="progress-text">
+                Validated 0 of 0 tags
+            </div>
+        </div>
+
+        <div class="header">
+            <button id="undoBtn" onclick="handleUndo()" class="undo-btn" title="Undo (Backspace)">
+                ↩ Undo
+            </button>
+            <div style="text-align: center; flex: 1;">
+                <h1 style="margin-bottom: 4px;">QuanReview</h1>
+                <div id="annotatorBadge" style="display: none; margin-bottom: 8px;">
+                    <span style="background-color: #e8f0fe; color: #1a73e8; padding: 4px 14px; border-radius: 16px; font-size: 13px; font-weight: 600; border: 1px solid #c5d9f7;">
+                        Annotating as: <span id="annotatorName"></span>
+                    </span>
+                </div>
+            </div>
+            <div class="doc-info" style="display: flex; align-items: center; gap: 10px;">
+                <div>
+                    <p>Document ID: <span id="docId">Loading...</span></p>
+                    <p>Remaining Tags: <span id="remaining">Loading...</span></p>
+                </div>
+                <button id="darkModeBtn" onclick="toggleDarkMode()" class="dark-mode-btn" title="Toggle dark mode">
+                    <svg id="darkModeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:block;">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+                <button id="previewBtn" onclick="toggleLabels()" class="dark-mode-btn" title="Reveal source labels" style="margin-left: 4px; opacity: 0.5;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Example display -->
+        <div class="example-container">
+            <div class="text-comparison">
+                <div class="text-column">
+                    <h3 id="realTagsLabel">Annotation 1</h3>
+                    <div class="text-display" id="realTagsDisplay">
+                        <p class="context-text">Loading...</p>
+                    </div>
+                    <div class="event-type-caption" id="realEventTypeLine"></div>
+                </div>
+                <div class="text-column">
+                    <h3 id="modelTagsLabel">Annotation 2</h3>
+                    <div class="text-display" id="modelTagsDisplay">
+                        <p class="context-text">Loading...</p>
+                    </div>
+                    <div class="event-type-caption" id="modelEventTypeLine"></div>
+                </div>
+            </div>
+
+            <div class="tag-info-container" style="display: flex; gap: 20px; align-items: flex-start;">
+                <!-- Event Info Column -->
+                <div class="tag-info" style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                    <div class="tag-box" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                        <h3 style="margin-top: 0; margin-bottom: 5px; text-align: center;" id="questionText">Build corrected annotation or flag fields</h3>
+
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start;">
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+                                <button id="acceptRealBtn" onclick="checkAll('real')" class="yes-btn"
+                                    style="width: 100%; background-color: #1a73e8; color: white; padding: 12px 10px;">
+                                    All Annotation 1
+                                </button>
+                                <div id="realChecklist" class="checklist-container"></div>
+                            </div>
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+                                <button id="acceptModelBtn" onclick="checkAll('model')" class="no-btn"
+                                    style="width: 100%; background-color: #009999; color: white; padding: 12px 10px;">
+                                    All Annotation 2
+                                </button>
+                                <div id="modelChecklist" class="checklist-container"></div>
+                            </div>
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+                                <button id="rejectBtn" onclick="submitAnswer('reject')" class="edit-btn"
+                                    style="background-color: #CC6600; color: white; width: 100%; padding: 12px 10px;">
+                                    Flag All
+                                </button>
+                                <div id="flagChecklist" class="checklist-container"></div>
+                            </div>
+                        </div>
+
+                        <div class="inline-comment-panel">
+                            <label for="flagCommentText">Optional review comment</label>
+                            <textarea id="flagCommentText" rows="4"
+                                placeholder="Write a note before submitting. If fields are flagged, this note is saved with the flag log."></textarea>
+                        </div>
+
+                        <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px;">
+                            <button id="submitHybridBtn" onclick="submitAnswer('hybrid')"
+                                style="background-color: #28a745; color: white; font-size: 16px; font-weight: bold; width: 100%; padding: 12px 10px; border: none; border-radius: 4px; cursor: pointer;">
+                                Submit
+                            </button>
+                            <button id="unalignedBtn" onclick="submitAnswer('unaligned')"
+                                title="Annotations refer to different spans (e.g. start vs end of text). Keeps the original annotation as the corrected output."
+                                style="background-color: #6f42c1; color: white; font-size: 16px; font-weight: bold; width: 100%; padding: 12px 10px; border: none; border-radius: 4px; cursor: pointer;">
+                                Unaligned annotations
+                            </button>
+                        </div>
+
+                        <div id="diffSummaryContainer"
+                            style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; display: none;">
+                            <strong id="diffSummaryLabel">Detected Differences (Annotation 1 vs Annotation 2):</strong>
+                            <ul id="diffSummaryList" style="margin: 5px 0 0 0; padding-left: 20px;">
+                            </ul>
+                        </div>
+
+                        <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+                            <button id="toggleJsonBtn" onclick="toggleJsonDisplay()"
+                                style="background-color: #6c757d; color: white; font-size: 15px; font-weight: bold; width: 100%; padding: 10px 32px; border: none; border-radius: 4px; cursor: pointer;">
+                                Show JSON
+                            </button>
+                        </div>
+
+                        <div id="jsonDisplaySection" style="display: none; flex-direction: row; gap: 10px; flex: 1; min-height: 0;">
+                            <div style="flex: 1; display: flex; flex-direction: column;">
+                                <h4 id="realEventLabel" style="margin: 0 0 5px 0; color: #174fb8;">Annotation 1 Event</h4>
+                                <pre id="realEventDisplay"
+                                    style="background: #e2e5f5; padding: 10px; border-radius: 4px; font-size: 13px; overflow: auto; flex: 1; white-space: pre-wrap; margin: 0; border: 1px solid #c6cff5;"></pre>
+                            </div>
+                            <div style="flex: 1; display: flex; flex-direction: column;">
+                                <h4 id="modelEventLabel" style="margin: 0 0 5px 0; color: #17a2b8;">Annotation 2 Event</h4>
+                                <pre id="modelEventDisplay"
+                                    style="background: #e2f3f5; padding: 10px; border-radius: 4px; font-size: 13px; overflow: auto; flex: 1; white-space: pre-wrap; margin: 0; border: 1px solid #bee5eb;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="modal"
+            style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+            <div class="modal-content"
+                style="background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 50%; border-radius: 8px;">
+                <h2>Edit Tag</h2>
+                <div style="margin-bottom: 15px;">
+                    <label for="editLabel">Label:</label>
+                    <input type="text" id="editLabel" style="width: 100%; padding: 5px; margin-top: 5px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label for="editText">Text (Content):</label>
+                    <input type="text" id="editText" style="width: 100%; padding: 5px; margin-top: 5px;">
+                    <small>Note: Changing text here does NOT change the offsets/highlighting, only the saved
+                        value.</small>
+                </div>
+                <div style="text-align: right;">
+                    <button onclick="closeEditModal()" style="padding: 8px 16px; margin-right: 10px;">Cancel</button>
+                    <button onclick="submitEdit()"
+                        style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px;">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Completion message -->
+        <div id="completionMessage" class="completion-message" style="display: none;">
+            <h2>Validation Complete!</h2>
+            <p>Results have been saved to: <span id="outputFile"></span></p>
+        </div>
+    </div>
+
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="js/text_highlighter.js?v=20260416-2"></script>
+    <script src="js/main.js?v=20260416-2"></script>
+</body>
+
+</html>

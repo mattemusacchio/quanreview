@@ -1,0 +1,28 @@
+[
+  {
+    "quantity": {
+      "text": "218",
+      "begin": 52,
+      "end": 55
+    },
+    "eventDescription": {
+      "text": "hospitalised",
+      "begin": 63,
+      "end": 75
+    },
+    "eventType": "EventP"
+  },
+  {
+    "quantity": {
+      "text": "19",
+      "begin": 100,
+      "end": 102
+    },
+    "unit": {
+      "text": "fatalities",
+      "begin": 103,
+      "end": 113
+    },
+    "eventType": "EventP"
+  }
+]
