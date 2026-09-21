@@ -25,7 +25,9 @@ The report has four sections:
   of reviewers that share documents, reported twice: over every shared pair and
   over only the pairs that no reviewer flagged. Flagged pairs are the contested
   cases the flag mechanism is meant to isolate, so agreement is typically higher
-  once they are excluded.
+  once they are excluded. A separate binary kappa measures agreement on the act
+  of flagging itself — whether reviewers converge on which pairs to flag, any
+  field — independent of the adjudicated values.
 """
 
 from __future__ import annotations
@@ -489,6 +491,16 @@ def _compute_agreement(
             ))
         return {"per_field": per_field_kappa, "overall": fleiss_kappa(matrix(pooled_obs))}
 
+    # Agreement on the act of flagging itself: a binary flagged/unflagged label
+    # per reviewer per pair, regardless of which field was flagged. This asks
+    # whether reviewers converge on *which* pairs are worth flagging, separate
+    # from whether they agree on the adjudicated values.
+    flag_obs = [
+        ["flag" if flags.get(a, {}).get((doc, pi)) else "unflagged" for a in group]
+        for (doc, pi) in all_items
+    ]
+    flag_kappa = fleiss_kappa(matrix(flag_obs)) if flag_obs else float("nan")
+
     return {
         "group": group,
         "shared_docs": len(shared),
@@ -497,6 +509,7 @@ def _compute_agreement(
         "pairs_unflagged": len(unflagged_items),
         "all": variant(all_items),
         "unflagged": variant(unflagged_items),
+        "flag_kappa": flag_kappa,
     }
 
 
@@ -585,6 +598,11 @@ def render_markdown(metrics: dict, title: str = "Annotation metrics") -> str:
         )
     lines.append(
         f"| **overall** | **{_overall_cell(unflagged)}** | **{_overall_cell(all_pairs)}** |"
+    )
+    lines.append("")
+    lines.append(
+        "Agreement on the act of flagging (binary flagged/unflagged per pair, "
+        f"any field), Fleiss κ: **{_kappa_cell(agreement['flag_kappa'])}**."
     )
     lines.append("")
     return "\n".join(lines)
