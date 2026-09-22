@@ -83,14 +83,13 @@ class TestAnnotationIntegration(unittest.TestCase):
             self.assertEqual(summary["documents_with_disagreement"], 1)
             self.assertEqual(summary["documents_pending_annotations"], 0)
             self.assertEqual(summary["overall_pairwise_iaa"], 0.5)
-            self.assertAlmostEqual(summary["overall_pairwise_cohens_kappa"], 1 / 3, places=6)
+            self.assertNotIn("overall_pairwise_cohens_kappa", summary)
 
             pair_metrics = report["pairwise_iaa_by_pair"]["alice :: bob"]
             self.assertEqual(pair_metrics["compared_docs"], 2)
             self.assertEqual(pair_metrics["agreed"], 1)
             self.assertEqual(pair_metrics["observed_agreement"], 0.5)
-            self.assertEqual(pair_metrics["expected_agreement"], 0.25)
-            self.assertAlmostEqual(pair_metrics["cohens_kappa"], 1 / 3, places=6)
+            self.assertNotIn("cohens_kappa", pair_metrics)
 
             merged_path = os.path.join(output_dir, "integration", "merged", "agree.json")
             self.assertTrue(os.path.exists(merged_path))
