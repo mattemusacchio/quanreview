@@ -79,6 +79,8 @@ class NERValidatorUI:
                 print(f"Found {len(processed_ids)} already corrected documents. Skipping them.")
                 self.validator.mark_docs_as_processed(processed_ids)
 
+            self._log_auto_flagged_model_only()
+
             initial = self.validator.get_next_example()
             initial['schema'] = self.schema
             if self.annotator_name:
@@ -182,6 +184,32 @@ class NERValidatorUI:
             print(f"Saved corrected document to: {output_path}")
         except Exception as e:
             print(f"Error saving document {doc_id}: {e}")
+
+    def _log_auto_flagged_model_only(self):
+        """Record model-only events the policy auto-flags for re-annotation.
+
+        Model-only events (no overlapping reference record) are not
+        silently dropped: a share of them may be genuine events the
+        reference layer missed. They are written once, at initialization,
+        to a dedicated log so they stay auditable and queued for a second
+        annotation round. A separate log keeps them out of the reviewer
+        flag log used for inter-annotator agreement metrics.
+        """
+        if not self.validator:
+            return
+        log_path = os.path.join(self._get_log_dir(), 'model_only_flagged.log')
+        lines = []
+        for doc_id in self.validator.data:
+            for ev in self.validator.get_doc_model_only(doc_id):
+                clean_ev = {k: v for k, v in ev.items() if k != 'event_id'}
+                event_json = json.dumps(clean_ev, ensure_ascii=False)
+                lines.append(
+                    f"File: {doc_id} | Auto-flag: model-only | Event: {event_json}"
+                )
+        if lines:
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write("\n".join(lines) + "\n")
+            print(f"Auto-flagged {len(lines)} model-only record(s) to: {log_path}")
 
     def save_doc_review_state(self, doc_id):
         """Persist unresolved/flagged review metadata for a single document."""

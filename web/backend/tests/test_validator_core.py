@@ -156,8 +156,8 @@ class TestNERValidatorCore(unittest.TestCase):
         self.assertEqual(final_events[1]['person']['text'], "Sundar Pichai")
         self.assertEqual(final_events[1]['type'], "Virtual Meeting")
 
-    def test_unmatched_real_events_are_auto_kept_and_model_only_events_are_dropped(self):
-        """Non-overlapping one-sided events should not appear as UI review pairs."""
+    def test_unmatched_real_events_are_auto_kept_and_model_only_events_are_auto_flagged(self):
+        """One-sided events: real-only auto-kept, model-only auto-flagged (not dropped)."""
         doc_id = "doc_unmatched"
         data = {
             doc_id: {
@@ -193,6 +193,52 @@ class TestNERValidatorCore(unittest.TestCase):
         self.assertEqual(len(final_events), 1)
         self.assertEqual(final_events[0]['company']['text'], "Alpha")
         self.assertEqual(final_events[0]['person']['text'], "Beta")
+
+        # The model-only event is auto-flagged for re-annotation, not dropped:
+        # it is recorded and retrievable, but never enters the corrected layer.
+        model_only = validator.get_doc_model_only(doc_id)
+        self.assertEqual(len(model_only), 1)
+        self.assertEqual(model_only[0]['company']['text'], "Gamma")
+        self.assertEqual(model_only[0]['person']['text'], "Delta")
+        self.assertNotIn(
+            "Gamma",
+            [ev.get('company', {}).get('text') for ev in final_events],
+        )
+
+    def test_model_only_count_surfaces_in_review_state(self):
+        """The auto-flagged model-only count is exposed in the review state."""
+        doc_id = "doc_model_only"
+        data = {
+            doc_id: {
+                "text": "Alpha met Beta. Gamma met Delta.",
+                "real_events": [
+                    {
+                        "event_id": "r1",
+                        "company": {"text": "Alpha", "begin": 0, "end": 5},
+                        "person": {"text": "Beta", "begin": 10, "end": 14},
+                        "type": "Meeting",
+                    }
+                ],
+                "model_events": [
+                    {
+                        "event_id": "r1",
+                        "company": {"text": "Alpha", "begin": 0, "end": 5},
+                        "person": {"text": "Beta", "begin": 10, "end": 14},
+                        "type": "Meeting",
+                    },
+                    {
+                        "event_id": "m2",
+                        "company": {"text": "Gamma", "begin": 16, "end": 21},
+                        "person": {"text": "Delta", "begin": 26, "end": 31},
+                        "type": "Meeting",
+                    },
+                ],
+            }
+        }
+
+        validator = NERValidatorCore(data, schema=self.schema)
+        state = validator.get_doc_review_state(doc_id)
+        self.assertEqual(state["auto_flagged_model_only_count"], 1)
 
 if __name__ == '__main__':
     unittest.main()
