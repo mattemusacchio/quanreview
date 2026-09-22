@@ -38,6 +38,7 @@ class NERValidatorCore:
         # Initialize tracking
         self.doc_final_events = {} # doc_id: list of validated/accepted events
         self.current_differences = {} # doc_id: list of (real_event, model_event) pairs
+        self.doc_model_only = {} # doc_id: list of model-only events auto-flagged for re-annotation
         self.history = [] # List for undo operations: (doc_id, index_in_differences, previous_state)
 
         self.docs_with_differences = []
@@ -142,7 +143,9 @@ class NERValidatorCore:
 
         Policy for unmatched events:
         - real-only events are auto-kept in the final output
-        - model-only events are auto-dropped
+        - model-only events are auto-flagged for a second annotation
+          round (recorded, not silently dropped, and not added to the
+          corrected layer)
         - only overlapping discrepant pairs are shown in the UI
         """
         doc = self.data[doc_id]
@@ -182,7 +185,13 @@ class NERValidatorCore:
                 # against unmatched model-only events.
                 self.doc_final_events[doc_id].append(re)
 
-        # Intentionally drop unmatched model-only events from the UI/output.
+        # Auto-flag unmatched model-only events for a second annotation
+        # round instead of silently dropping them: a share may be genuine
+        # events the reference layer missed rather than model hallucinations.
+        # They are recorded but not added to the corrected layer.
+        self.doc_model_only[doc_id] = [
+            me for i, me in enumerate(diff_model) if i not in used_model
+        ]
 
         return pairs
 
@@ -331,6 +340,15 @@ class NERValidatorCore:
 
         return final_events
 
+    def get_doc_model_only(self, doc_id):
+        """Return the model-only events auto-flagged for re-annotation.
+
+        These are events the model produced that no reference record
+        overlaps. They are recorded for a second annotation round rather
+        than silently dropped, and are not part of the corrected layer.
+        """
+        return list(self.doc_model_only.get(doc_id, []))
+
     def get_doc_review_state(self, doc_id):
         """Return per-pair review metadata, including unresolved/flagged pairs."""
         reviewed_pairs = []
@@ -358,5 +376,6 @@ class NERValidatorCore:
             "doc_id": doc_id,
             "reviewed_pair_count": len(reviewed_pairs),
             "unresolved_pair_count": unresolved_pair_count,
+            "auto_flagged_model_only_count": len(self.doc_model_only.get(doc_id, [])),
             "reviewed_pairs": reviewed_pairs,
         }

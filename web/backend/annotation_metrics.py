@@ -3,8 +3,9 @@
 Each saved annotation is traced back to the discrepant pair it came from by
 reproducing the reviewer app's exact pairing (:class:`NERValidatorCore`):
 perfect ground-truth/model matches and real-only events are auto-kept and never
-shown to the annotator, model-only events are dropped, and only overlapping
-discrepant pairs are presented. Reversing that with a naive quantity heuristic
+shown to the annotator, model-only events are auto-flagged for re-annotation
+(not shown as adjudication pairs), and only overlapping discrepant pairs are
+presented. Reversing that with a naive quantity heuristic
 mis-assigns events whenever a value repeats in a document, so this module goes
 through the same core the reviewer uses.
 
